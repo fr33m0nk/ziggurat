@@ -27,6 +27,7 @@
       (conj (vec (concat actor-routes (get-routes))))
       (bidi/make-handler)
       (m/wrap-hyphenate)
+      (m/wrap-swagger)
       (ring-defaults/wrap-defaults ring-defaults/api-defaults)
       (wrap-json-params)
       (wrap-multipart-params)
@@ -34,5 +35,4 @@
       (m/wrap-default-content-type-json)
       (wrap-newrelic-transaction)
       (m/wrap-errors)
-      (m/publish-metrics)
       (wrap-with-logger)))

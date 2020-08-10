@@ -1,78 +1,16 @@
 (ns ziggurat.messaging.producer
   (:require [clojure.tools.logging :as log]
-            [langohr.basic :as lb]
-            [langohr.channel :as lch]
-            [langohr.exchange :as le]
-            [langohr.queue :as lq]
-            [sentry-clj.async :as sentry]
-            [taoensso.nippy :as nippy]
             [ziggurat.config :refer [ziggurat-config rabbitmq-config channel-retry-config]]
-            [ziggurat.messaging.connection :refer [connection is-connection-required?]]
             [ziggurat.messaging.util :refer :all]
             [ziggurat.retry :refer [with-retry]]
+            [ziggurat.messaging.messaging :as messaging]
+            [ziggurat.messaging.util :as util]
             [ziggurat.sentry :refer [sentry-reporter]]))
 
 (def MAX_EXPONENTIAL_RETRIES 25)
 
 (defn delay-queue-name [topic-entity queue-name]
   (prefixed-queue-name topic-entity queue-name))
-
-(defn- create-queue [queue props ch]
-  (lq/declare ch queue {:durable true :arguments props :auto-delete false})
-  (log/info "Created queue - " queue))
-
-(defn- declare-exchange [ch exchange]
-  (le/declare ch exchange "fanout" {:durable true :auto-delete false})
-  (log/info "Declared exchange - " exchange))
-
-(defn- bind-queue-to-exchange [ch queue exchange]
-  (lq/bind ch queue exchange)
-  (log/infof "Bound queue %s to exchange %s" queue exchange))
-
-(defn- create-and-bind-queue
-  ([queue-name exchange]
-   (create-and-bind-queue queue-name exchange nil))
-  ([queue-name exchange-name dead-letter-exchange]
-   (try
-     (let [props (if dead-letter-exchange
-                   {"x-dead-letter-exchange" dead-letter-exchange}
-                   {})]
-       (let [ch (lch/open connection)]
-         (create-queue queue-name props ch)
-         (declare-exchange ch exchange-name)
-         (bind-queue-to-exchange ch queue-name exchange-name)))
-     (catch Exception e
-       (sentry/report-error sentry-reporter e "Error while declaring RabbitMQ queues")
-       (throw e)))))
-
-(defn- record-headers->map [record-headers]
-  (reduce (fn [header-map record-header]
-            (assoc header-map (.key record-header) (String. (.value record-header))))
-          {}
-          record-headers))
-
-(defn- properties-for-publish
-  [expiration headers]
-  (let [props {:content-type "application/octet-stream"
-               :persistent   true
-               :headers      (record-headers->map headers)}]
-    (if expiration
-      (assoc props :expiration (str expiration))
-      props)))
-
-(defn- publish
-  ([exchange message-payload]
-   (publish exchange message-payload nil))
-  ([exchange message-payload expiration]
-   (try
-     (with-retry {:count      5
-                  :wait       100
-                  :on-failure #(log/error "publishing message to rabbitmq failed with error " (.getMessage %))}
-       (with-open [ch (lch/open connection)]
-         (lb/publish ch exchange "" (nippy/freeze (dissoc message-payload :headers)) (properties-for-publish expiration (:headers message-payload)))))
-     (catch Throwable e
-       (sentry/report-error sentry-reporter e
-                            "Pushing message to rabbitmq failed, data: " message-payload)))))
 
 (defn- retry-type []
   (-> (ziggurat-config) :retry :type))
@@ -123,8 +61,8 @@
 
 (defn get-queue-timeout-ms [message-payload]
   "Calculate queue timeout for delay queue. Uses the value from [[get-exponential-backoff-timeout-ms]] if exponential backoff enabled."
-  (let [queue-timeout-ms (-> (rabbitmq-config) :delay :queue-timeout-ms)
-        retry-count (-> (ziggurat-config) :retry :count)
+  (let [queue-timeout-ms    (-> (rabbitmq-config) :delay :queue-timeout-ms)
+        retry-count         (-> (ziggurat-config) :retry :count)
         message-retry-count (:retry-count message-payload)]
     (if (= :exponential (-> (ziggurat-config) :retry :type))
       (get-exponential-backoff-timeout-ms retry-count message-retry-count queue-timeout-ms)
@@ -133,8 +71,8 @@
 (defn get-channel-queue-timeout-ms [topic-entity channel message-payload]
   "Calculate queue timeout for channel delay queue. Uses the value from [[get-exponential-backoff-timeout-ms]] if exponential backoff enabled."
   (let [channel-queue-timeout-ms (get-channel-queue-timeout-or-default-timeout topic-entity channel)
-        message-retry-count (:retry-count message-payload)
-        channel-retry-count (get-channel-retry-count topic-entity channel)]
+        message-retry-count      (:retry-count message-payload)
+        channel-retry-count      (get-channel-retry-count topic-entity channel)]
     (if (= :exponential (channel-retry-type topic-entity channel))
       (get-exponential-backoff-timeout-ms channel-retry-count message-retry-count channel-queue-timeout-ms)
       channel-queue-timeout-ms)))
@@ -143,17 +81,17 @@
   "This function return delay exchange name for retry when using flow without channel. It will return exchange name with retry count as suffix if exponential backoff enabled."
   (let [{:keys [exchange-name]} (:delay (rabbitmq-config))
         exchange-name (prefixed-queue-name topic-entity exchange-name)
-        retry-count (-> (ziggurat-config) :retry :count)]
+        retry-count   (-> (ziggurat-config) :retry :count)]
     (if (= :exponential (-> (ziggurat-config) :retry :type))
       (let [message-retry-count (:retry-count message-payload)
-            backoff-exponent (get-backoff-exponent retry-count message-retry-count)]
+            backoff-exponent    (get-backoff-exponent retry-count message-retry-count)]
         (prefixed-queue-name exchange-name backoff-exponent))
       exchange-name)))
 
 (defn get-channel-delay-exchange-name [topic-entity channel message-payload]
   "This function return delay exchange name for retry when using channel flow. It will return exchange name with retry count as suffix if exponential backoff enabled."
   (let [{:keys [exchange-name]} (:delay (rabbitmq-config))
-        exchange-name (prefixed-channel-name topic-entity channel exchange-name)
+        exchange-name       (prefixed-channel-name topic-entity channel exchange-name)
         channel-retry-count (get-channel-retry-count topic-entity channel)]
     (if (= :exponential (channel-retry-type topic-entity channel))
       (let [message-retry-count (:retry-count message-payload)
@@ -162,40 +100,40 @@
       exchange-name)))
 
 (defn publish-to-delay-queue [message-payload]
-  (let [topic-entity  (:topic-entity message-payload)
-        exchange-name (get-delay-exchange-name topic-entity message-payload)
+  (let [topic-entity     (:topic-entity message-payload)
+        exchange-name    (get-delay-exchange-name topic-entity message-payload)
         queue-timeout-ms (get-queue-timeout-ms message-payload)]
-    (publish exchange-name message-payload queue-timeout-ms)))
+    (messaging/publish exchange-name message-payload queue-timeout-ms)))
 
 (defn publish-to-dead-queue [message-payload]
   (let [{:keys [exchange-name]} (:dead-letter (rabbitmq-config))
         topic-entity  (:topic-entity message-payload)
         exchange-name (prefixed-queue-name topic-entity exchange-name)]
-    (publish exchange-name message-payload)))
+    (messaging/publish exchange-name message-payload)))
 
 (defn publish-to-instant-queue [message-payload]
   (let [{:keys [exchange-name]} (:instant (rabbitmq-config))
         topic-entity  (:topic-entity message-payload)
         exchange-name (prefixed-queue-name topic-entity exchange-name)]
-    (publish exchange-name message-payload)))
+    (messaging/publish exchange-name message-payload)))
 
 (defn publish-to-channel-delay-queue [channel message-payload]
-  (let [topic-entity  (:topic-entity message-payload)
-        exchange-name (get-channel-delay-exchange-name topic-entity channel message-payload)
+  (let [topic-entity     (:topic-entity message-payload)
+        exchange-name    (get-channel-delay-exchange-name topic-entity channel message-payload)
         queue-timeout-ms (get-channel-queue-timeout-ms topic-entity channel message-payload)]
-    (publish exchange-name message-payload queue-timeout-ms)))
+    (messaging/publish exchange-name message-payload queue-timeout-ms)))
 
 (defn publish-to-channel-dead-queue [channel message-payload]
   (let [{:keys [exchange-name]} (:dead-letter (rabbitmq-config))
         topic-entity  (:topic-entity message-payload)
         exchange-name (prefixed-channel-name topic-entity channel exchange-name)]
-    (publish exchange-name message-payload)))
+    (messaging/publish exchange-name message-payload)))
 
 (defn publish-to-channel-instant-queue [channel message-payload]
   (let [{:keys [exchange-name]} (:instant (rabbitmq-config))
-        topic-entity (:topic-entity message-payload)
+        topic-entity  (:topic-entity message-payload)
         exchange-name (prefixed-channel-name topic-entity channel exchange-name)]
-    (publish exchange-name message-payload)))
+    (messaging/publish exchange-name message-payload)))
 
 (defn retry [{:keys [retry-count topic-entity] :as message-payload}]
   (when (-> (ziggurat-config) :retry :enabled)
@@ -216,7 +154,7 @@
         queue-name                (delay-queue-name topic-entity queue-name)
         exchange-name             (prefixed-queue-name topic-entity exchange-name)
         dead-letter-exchange-name (prefixed-queue-name topic-entity dead-letter-exchange)]
-    (create-and-bind-queue queue-name exchange-name dead-letter-exchange-name)))
+    (messaging/create-and-bind-queue queue-name exchange-name dead-letter-exchange-name)))
 
 (defn- make-delay-queue-with-retry-count [topic-entity retry-count]
   (let [{:keys [queue-name exchange-name dead-letter-exchange]} (:delay (rabbitmq-config))
@@ -225,7 +163,7 @@
         dead-letter-exchange-name (prefixed-queue-name topic-entity dead-letter-exchange)
         sequence                  (min MAX_EXPONENTIAL_RETRIES (inc retry-count))]
     (doseq [s (range 1 sequence)]
-      (create-and-bind-queue (prefixed-queue-name queue-name s) (prefixed-queue-name exchange-name s) dead-letter-exchange-name))))
+      (messaging/create-and-bind-queue (prefixed-queue-name queue-name s) (prefixed-queue-name exchange-name s) dead-letter-exchange-name))))
 
 (defn- make-channel-delay-queue-with-retry-count [topic-entity channel retry-count]
   (make-delay-queue-with-retry-count (with-channel-name topic-entity channel) retry-count))
@@ -237,7 +175,7 @@
   (let [{:keys [queue-name exchange-name]} (queue-type (rabbitmq-config))
         queue-name    (prefixed-queue-name topic-identifier queue-name)
         exchange-name (prefixed-queue-name topic-identifier exchange-name)]
-    (create-and-bind-queue queue-name exchange-name)))
+    (messaging/create-and-bind-queue queue-name exchange-name)))
 
 (defn- make-channel-queue [topic-entity channel-name queue-type]
   (make-queue (with-channel-name topic-entity channel-name) queue-type))
@@ -265,9 +203,9 @@
                   (make-channel-delay-queue topic-entity channel)))))))
 
 (defn make-queues [stream-routes]
-  (when (is-connection-required?)
+  (when (util/is-connection-required? (ziggurat-config) stream-routes)
     (doseq [topic-entity (keys stream-routes)]
-      (let [channels (get-channel-names stream-routes topic-entity)
+      (let [channels   (get-channel-names stream-routes topic-entity)
             retry-type (retry-type)]
         (make-channel-queues channels topic-entity)
         (when (-> (ziggurat-config) :retry :enabled)
@@ -279,12 +217,12 @@
                                                     "Please use it only after understanding its risks and implications."
                                                     "Its contract can change in the future releases of Ziggurat.")
                                           (make-delay-queue-with-retry-count topic-entity (-> (ziggurat-config) :retry :count)))
-            (= :linear retry-type)      (make-delay-queue topic-entity)
-            (nil? retry-type)           (do
-                                          (log/warn "[Deprecation Notice]: Please note that the configuration for retries has changed."
-                                                    "Please look at the upgrade guide for details: https://github.com/gojek/ziggurat/wiki/Upgrade-guide"
-                                                    "Use :type to specify the type of retry mechanism in the config.")
-                                          (make-delay-queue topic-entity))
+            (= :linear retry-type) (make-delay-queue topic-entity)
+            (nil? retry-type) (do
+                                (log/warn "[Deprecation Notice]: Please note that the configuration for retries has changed."
+                                          "Please look at the upgrade guide for details: https://github.com/gojek/ziggurat/wiki/Upgrade-guide"
+                                          "Use :type to specify the type of retry mechanism in the config.")
+                                (make-delay-queue topic-entity))
             :else (do
                     (log/warn "Incorrect keyword for type passed, falling back to linear backoff for topic Entity: " topic-entity)
                     (make-delay-queue topic-entity))))))))

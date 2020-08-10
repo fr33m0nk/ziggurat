@@ -1,4 +1,4 @@
-(defproject tech.gojek/ziggurat "3.3.0-alpha.1"
+(defproject tech.gojek/ziggurat "3.3.1-alpha.9"
   :description "A stream processing framework to build stateless applications on kafka"
   :url "https://github.com/gojektech/ziggurat"
   :license {:name "Apache License, Version 2.0"
@@ -25,7 +25,7 @@
                  [io.opentracing.contrib/opentracing-kafka-client "0.1.4" :exclusions [org.lz4/lz4-java com.github.luben/zstd-jni org.slf4j/slf4j-api org.xerial.snappy/snappy-java]]
                  [io.opentracing.contrib/opentracing-rabbitmq-client "0.1.5" :exclusions [com.rabbitmq/amqp-client]]
                  [org.apache.httpcomponents/fluent-hc "4.5.4"]
-                 [org.apache.kafka/kafka-streams "2.1.0" :exclusions [org.slf4j/slf4j-log4j12 log4j]]
+                 [org.apache.kafka/kafka-streams "2.3.0" :exclusions [org.slf4j/slf4j-log4j12 log4j]]
                  [org.apache.logging.log4j/log4j-core "2.12.1"]
                  [org.apache.logging.log4j/log4j-slf4j-impl "2.12.1"]
                  [org.clojure/clojure "1.10.0"]
@@ -33,6 +33,7 @@
                  [nrepl/nrepl "0.6.0"]
                  [clojusc/protobuf "3.5.1-v1.1"]
                  [prismatic/schema "1.1.12"]
+                 [clj-statsd "0.4.0"]
                  [ring/ring "1.7.1"]
                  [ring/ring-core "1.7.1"]
                  [ring/ring-defaults "0.3.2"]
@@ -40,19 +41,25 @@
                  [ring/ring-json "0.4.0"]
                  [ring-logger "0.7.7"]
                  [tech.gojek/sentry-clj.async "1.0.0" :exclusions [org.clojure/clojure]]
-                 [yleisradio/new-reliquary "1.1.0" :exclusions [org.clojure/clojure]]]
-  :deploy-repositories [["clojars" {:url "https://clojars.org/repo"
-                                      :username :env/clojars_username
-                                      :password :env/clojars_password
-                                      :sign-releases false}]]
+                 [yleisradio/new-reliquary "1.1.0" :exclusions [org.clojure/clojure]]
+                 [metosin/ring-swagger "0.26.2"
+                  :exclusions [cheshire
+                               com.fasterxml.jackson.core/jackson-core
+                               com.fasterxml.jackson.dataformat/jackson-dataformat-smile
+                               com.fasterxml.jackson.dataformat/jackson-dataformat-cbor]]
+                 [metosin/ring-swagger-ui "3.25.3"]]
+  :deploy-repositories [["clojars" {:url           "https://clojars.org/repo"
+                                    :username      :env/clojars_username
+                                    :password      :env/clojars_password
+                                    :sign-releases false}]]
   :pedantic? :warn
   :java-source-paths ["src/com"]
-  :aliases {"test-all"                   ["with-profile" "default:+1.8:+1.9" "test"]
-            "code-coverage"              ["with-profile" "test" "cloverage" "--output" "coverage" "--coveralls"]}
+  :aliases {"test-all"      ["with-profile" "default:+1.8:+1.9" "test"]
+            "code-coverage" ["with-profile" "test" "cloverage" "--output" "coverage" "--coveralls"]}
   :aot [ziggurat.init ziggurat.config ziggurat.producer ziggurat.sentry ziggurat.metrics ziggurat.fixtures]
   :profiles {:uberjar {:aot         :all
                        :global-vars {*warn-on-reflection* true}
-                       :pedantic? :abort}
+                       :pedantic?   :abort}
              :test    {:jvm-opts     ["-Dlog4j.configurationFile=resources/log4j2.test.xml"]
                        :dependencies [[com.google.protobuf/protobuf-java "3.9.1"]
                                       [io.confluent/kafka-schema-registry "4.1.1" :exclusions [javax.ws.rs/javax.ws.rs-api com.fasterxml.jackson.core/jackson-annotations]]
@@ -64,7 +71,8 @@
                                       [org.clojure/test.check "0.10.0"]]
                        :plugins      [[lein-cloverage "1.0.13" :exclusions [org.clojure/clojure]]]
                        :repositories [["confluent-repo" "https://packages.confluent.io/maven/"]]}
-             :dev     {:plugins [[lein-cljfmt "0.6.4"]
+             :dev     {:plugins [[lein-ancient "0.6.15"]
+                                 [lein-cljfmt "0.6.4"]
                                  [lein-cloverage "1.0.13"]
                                  [lein-kibit "0.1.7" :exclusions [org.clojure/tools.cli rewrite-clj org.clojure/tools.reader]]]}
              :1.9     {:dependencies [[org.clojure/clojure "1.9.0"]]}

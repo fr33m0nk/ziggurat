@@ -3,6 +3,87 @@ All notable changes to this project will be documented in this file. This change
 
 ## Unreleased Changes
 
+## 3.3.1-alpha.9 - 2020-08-07
+- Defaults RabbitMQ queue replication to `(n/2) + 1` nodes, where `n` is the number of nodes in the cluster
+
+## 3.3.1-alpha.8 - 2020-07-27
+- Fixes false positive exception thrown by messaging when an actor abnormally terminates
+
+## 3.3.1-alpha.7 - 2020-07-23
+- Remove defrecord wrappers
+
+## 3.3.1-alpha.6 - 2020-07-18
+- Uses default ha-config values if nothing is provided
+
+## 3.3.1-alpha.5 - 2020-07-06
+- Adds RabbitMQMessaging implementation to support connection with RabbitMQ clusters
+- Adds support for setting up HA policies for queues and exchanges
+
+## 3.3.1-alpha.4 - 2020-07-02
+- Removes the use of the old protobuf library in favor of the new one
+
+## 3.3.1-alpha.3 - 2020-06-29
+- Makes messaging implementation configurable
+- Adds a new protocol for Messaging
+
+## 3.3.1-alpha.2 - 2020-06-23
+- Refactors rabbitmq specific logic to the messaging.rabbitmq package
+- Adds unit tests for rabbitmq specific namespaces
+- Adds test annotations to messaging integration tests
+
+## 3.3.1-alpha.1 - 2020-06-18
+- Support for Kafka Stream KStream-KStream Join
+
+## 3.3.1 - 2020-06-17
+- Introduces a swagger middleware on the HTTP server.
+
+## 3.3.0 - 2020-05-26
+- Makes metrics library configurable, exposes a metrics interface and provides an
+implementation for clj-statsd library.
+- Updates dependency of flatland/protobuf and puts the change behind a alpha-features configuration flag
+- Adds support for all configurations of kafka-producer.
+
+*(for a more details list of changes look at the changelogs of 3.3.0-alpha. entries)*
+
+## 3.3.0-alpha.8 - 2020-05-19
+- Adding support for all configurations supported by Kafka Producer
+
+## 3.3.0-alpha.7 - 2020-05-07
+- Remove `[org.flatland/protobuf "0.8.1"]` from test dependencies
+
+## 3.3.0-alpha.6 - 2020-05-07
+- Fixes [Issue](https://github.com/gojek/ziggurat/issues/144)
+- Adds alpha feature flags
+
+## 3.3.0-alpha.5 - 2020-04-28
+- Makes metrics implementation configurable
+- passes "all" metric-name to update timing for all metrics
+- Adds docs for MetricsProtocol
+
+## 3.3.0-alpha.4 - 2020-04-26
+- Defines an interface for metrics.
+- Changes the dropwizard implementation to use the metrics interface
+- Adds a metrics interface implementation for clj-statsd library.
+
+## 3.3.0-alpha.3 - 2020-04-22
+- Fixes metrics initialization
+
+## 3.3.0-alpha.2 - 2020-04-21
+- Refactors Metrics.clj
+- Moves dropwizard metrics logic to its own namespace
+- Moves statsd state (transport and reporter) to dropwizard namespace
+
+## 3.2.3 - 2020-04-21
+- Removes wrap-with-metrics middleware from HTTP router
+
+## 3.2.2 - 2020-04-14
+- Fixes bug [Issue](https://github.com/gojek/ziggurat/issues/28)
+  to avoid confusion between datadog and statsd
+
+## 3.2.1 - 2020-03-23
+- Fixes bug for this [Issue](https://github.com/gojek/ziggurat/issues/131)
+- Releases metrics for http requests in a stable release
+
 ## 3.3.0-alpha.1 - 2020-01-24
 - Added metrics for recording http requests served
 
@@ -56,8 +137,8 @@ All notable changes to this project will be documented in this file. This change
 
 ## 3.1.0-alpha.2 - 2019-11-05
 - JSON middleware has been added.
-- Adds custom delay ([Issue#78](https://github.com/gojek/ziggurat/issues/78)) 
-  for processing messages from RabbitMQ channels and 
+- Adds custom delay ([Issue#78](https://github.com/gojek/ziggurat/issues/78))
+  for processing messages from RabbitMQ channels and
   adds exponential backoff strategy (configurable) for channel retries.
 
 ## 3.1.0-alpha.1 - 2019-10-14
